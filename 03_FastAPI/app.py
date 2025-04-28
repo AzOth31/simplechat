@@ -192,7 +192,7 @@ async def generate_simple(request: SimpleGenerationRequest):
 
         return GenerationResponse(
             generated_text=assistant_response,
-            response_time=response_time
+        #    response_time=response_time
         )
 
     except Exception as e:
