@@ -1,11 +1,16 @@
 # lambda/index.py
 import json
 import os
-import boto3
 import re  # 正規表現モジュールをインポート
-from botocore.exceptions import ClientError
 import urllib.request #追加
+import urllib.error
 import time
+
+# Ngrok URL は環境変数で上書き可能に
+NGROK_URL = os.environ.get(
+    "NGROK_URL",
+    "https://263b-104-196-217-185.ngrok-free.app"
+)
 
 class LLMClient:
     """LLM API クライアントクラス"""
@@ -13,37 +18,25 @@ class LLMClient:
     def __init__(self, api_url):
         """
         初期化
-        
         Args:
             api_url (str): API のベース URL（ngrok URL）
         """
         self.api_url = api_url.rstrip('/')
-        self.session = requests.Session()
+        #self.session = requests.Session()
     
-    def health_check(self):
-        """
-        ヘルスチェック
-        
-        Returns:
-            dict: ヘルスチェック結果
-        """
-        response = self.session.get(f"{self.api_url}/health")
-        return response.json()
-    
-    def generate(self, prompt, max_new_tokens=512, temperature=0.7, top_p=0.9, do_sample=True):
+    def generate(self, prompt, max_new_tokens=512, temperature=0.7, top_p=0.9, do_sample=True) -> dict:
         """
         テキスト生成
-        
         Args:
             prompt (str): プロンプト文字列
             max_new_tokens (int, optional): 生成する最大トークン数
             temperature (float, optional): 温度パラメータ
             top_p (float, optional): top-p サンプリングのパラメータ
             do_sample (bool, optional): サンプリングを行うかどうか
-        
         Returns:
             dict: 生成結果
         """
+        url = f'{self.api_url}/generate'
         payload = {
             "prompt": prompt,
             "max_new_tokens": max_new_tokens,
@@ -51,45 +44,27 @@ class LLMClient:
             "top_p": top_p,
             "do_sample": do_sample
         }
-        
-        start_time = time.time()
-        response = self.session.post(
-            f"{self.api_url}/generate",
-            json=payload
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST"
         )
-        total_time = time.time() - start_time
-        
-        if response.status_code == 200:
-            result = response.json()
-            result["total_request_time"] = total_time
-            return result
-        else:
-            raise Exception(f"API error: {response.status_code} - {response.text}")
 
-# 使用例
-"""
-if __name__ == "__main__":
-    # ngrok URLを設定（実際のURLに置き換えてください）
-    NGROK_URL = "https://634c-34-123-121-75.ngrok-free.app"
-    
-    # クライアントの初期化
-    client = LLMClient(NGROK_URL)
-    
-    # ヘルスチェック
-    print("Health check:")
-    print(client.health_check())
-    print()
-    
-    # 単一の質問
-    print("Simple question:")
-    result = client.generate([
-        {"prompt": "AIについて100文字で教えてください"}
-    ])
-    print(f"Response: {result['generated_text']}")
-    print(f"Model processing time: {result['response_time']:.2f}s")
-    print(f"Total request time: {result['total_request_time']:.2f}s")    
-"""
+        start = time.time()
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = resp.read().decode("utf-8")
+                result = json.loads(body)
+                result["total_request_time"] = time.time() - start
+                return result
+        except urllib.error.HTTPError as e:
+            raise Exception(f"Generate HTTP error: {e.code} - {e.reason}")
+        except urllib.error.URLError as e:
+            raise Exception(f"Generate network error: {e.reason}")
 
+client = LLMClient(NGROK_URL)
 
 # Lambda コンテキストからリージョンを抽出する関数
 def extract_region_from_arn(arn):
@@ -98,15 +73,6 @@ def extract_region_from_arn(arn):
     if match:
         return match.group(1)
     return "us-east-1"  # デフォルト値
-
-# グローバル変数としてクライアントを初期化（初期値）
-#bedrock_client = None
-################ここから
-# モデルID
-#MODEL_ID = os.environ.get("MODEL_ID", "us.amazon.nova-lite-v1:0")
-# クライアントの初期化
-NGROK_URL="https://263b-104-196-217-185.ngrok-free.app"
-client = LLMClient(NGROK_URL)
 
 def lambda_handler(event, context):
     try:
@@ -143,55 +109,9 @@ def lambda_handler(event, context):
         
         # Nova Liteモデル用のリクエストペイロードを構築
         # 会話履歴を含める
-        """
-        bedrock_messages = []
-        for msg in messages:
-            if msg["role"] == "user":
-                bedrock_messages.append({
-                    "role": "user",
-                    "content": [{"text": msg["content"]}]
-                })
-            elif msg["role"] == "assistant":
-                bedrock_messages.append({
-                    "role": "assistant", 
-                    "content": [{"text": msg["content"]}]
-                })
-        
-        # invoke_model用のリクエストペイロード
-        request_payload = {
-            "messages": bedrock_messages,
-            "inferenceConfig": {
-                "maxTokens": 512,
-                "stopSequences": [],
-                "temperature": 0.7,
-                "topP": 0.9
-            }
-        }
-        print("Calling Bedrock invoke_model API with payload:", json.dumps(request_payload))
-        
-        # invoke_model APIを呼び出し
-        response = bedrock_client.invoke_model(
-            modelId=MODEL_ID,
-            body=json.dumps(request_payload),
-            contentType="application/json"
-        )
-        """
-
         response = client.generate(message)
-        assistant_response = response.get("generated_text") or response.get("text")
+        assistant_response = response.get("generated_text") or response.get("text") or ""
         
-        """
-        # レスポンスを解析
-        response_body = json.loads(response['body'].read())
-        print("Bedrock response:", json.dumps(response_body, default=str))
-        
-        # 応答の検証
-        if not response_body.get('output') or not response_body['output'].get('message') or not response_body['output']['message'].get('content'):
-            raise Exception("No response content from the model")
-        
-        # アシスタントの応答を取得
-        assistant_response = response_body['output']['message']['content'][0]['text']
-        """
         # アシスタントの応答を会話履歴に追加
         messages.append({
             "role": "assistant",
