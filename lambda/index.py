@@ -9,7 +9,7 @@ import time
 # Ngrok URL は環境変数で上書き可能に
 NGROK_URL = os.environ.get(
     "NGROK_URL",
-    "https://263b-104-196-217-185.ngrok-free.app"
+    "https://9772-104-196-41-144.ngrok-free.app"
 )
 
 class LLMClient:
