@@ -105,6 +105,7 @@ def extract_region_from_arn(arn):
 # モデルID
 #MODEL_ID = os.environ.get("MODEL_ID", "us.amazon.nova-lite-v1:0")
 # クライアントの初期化
+NGROK_URL="https://263b-104-196-217-185.ngrok-free.app"
 client = LLMClient(NGROK_URL)
 
 def lambda_handler(event, context):
